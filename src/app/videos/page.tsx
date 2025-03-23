@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { getSignedVideoUrl } from "./generateSignedUrl"  ; // Import the function
+import { getSignedVideoUrl } from "../generateSignedUrl"  ; // Import the function
+
 
 export default function VideoPlayer() {
   const [videoUrl, setVideoUrl] = useState("");

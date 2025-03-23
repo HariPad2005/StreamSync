@@ -1,3 +1,4 @@
+"use server";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -15,10 +16,14 @@ const s3 = new S3Client({
 export async function getSignedVideoUrl(fileName: string): Promise<string> {
   if (!fileName) throw new Error("File name is required");
 
+  console.log("filename: ",fileName); // Should print your endpoint
+  console.log("Bucket Name:", process.env.B2_BUCKET_NAME!); // Should print your bucket name
+
   const command = new GetObjectCommand({
     Bucket: process.env.B2_BUCKET_NAME!,
     Key: fileName,
   });
 
-  return getSignedUrl(s3, command, { expiresIn: 3600 }); // 1-hour expiry
+  const signedUrl= await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1-hour expiry
+  return signedUrl;
 }
