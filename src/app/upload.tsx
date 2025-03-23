@@ -1,14 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use server";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import multer from "multer";
-import { NextResponse } from "next/server";
-import fs from "fs";
-import { promisify } from "util";
 
-// Configure Multer for handling file uploads
-const upload = multer({ dest: "/tmp" });
-const uploadMiddleware = promisify(upload.single("file"));
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // Initialize Backblaze B2 S3 Client
 const s3 = new S3Client({
@@ -20,32 +13,51 @@ const s3 = new S3Client({
   },
 });
 
-export async function POST(req: Request) {
+export async function uploadFile(formData: FormData) {
   try {
     // Handle file upload
-    const formData = await req.formData();
     const file = formData.get("file") as File | null;
-
     if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      console.error("No file found in FormData");
+      return { error: "No file uploaded" };
     }
 
-    // Read file data as a buffer
+    console.log("File received:", file.name, file.size);
+
+    // Convert file to buffer
     const fileBuffer = Buffer.from(await file.arrayBuffer());
+    console.log("Converted file to buffer");
+    console.log("Using Backblaze B2 Endpoint:", process.env.B2_ENDPOINT);
+
+
     const chunkName = `chunks/${Date.now()}_${file.name}`;
 
+
     // Upload to Backblaze B2
-    const uploadParams = {
-      Bucket: process.env.B2_BUCKET_NAME!,
-      Key: chunkName,
-      Body: fileBuffer,
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.B2_BUCKET_NAME!,
+        Key: chunkName,
+        Body: fileBuffer,
+      })
+    );
+
+    console.log("Upload successful!");
+
+    // ✅ Return a JSON-safe response
+    return {
+      success: true,
+      message: "Upload successful",
+      file: chunkName,
     };
-
-    await s3.send(new PutObjectCommand(uploadParams));
-
-    return NextResponse.json({ message: "Upload successful", file: chunkName });
   } catch (error) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+
+    // ✅ Return a JSON-safe error response
+    return {
+      success: false,
+      error: "Upload failed",
+      details: (error as Error).message,
+    };
   }
 }
