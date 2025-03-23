@@ -1,6 +1,6 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getS3SignedUrl } from "@aws-sdk/s3-request-presigner";
-import { b2Client } from "@/lib/b2"; // Ensure this exports your configured B2 (S3-compatible) client
+import { b2Client } from "@/lib/b2"; // Make sure this exports your configured B2 (S3-compatible) client
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
@@ -13,11 +13,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid or missing 'chunk' parameter" }, { status: 400 });
     }
 
-    const paddedChunkValue = chunkIndex.padStart(3, "0");
-    const key = `video_chunk_${paddedChunkValue}.mp4`;
+    const paddedChunk = chunkIndex.padStart(3, "0");
+    const key = `video_chunk_${paddedChunk}.mp4`;
 
     const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-    const signedUrl = await getS3SignedUrl(b2Client, command, { expiresIn: 300 });
+    const signedUrl = await getS3SignedUrl(b2Client, command, { expiresIn: 90 });
 
     return NextResponse.json({ url: signedUrl });
   } catch (error: unknown) {

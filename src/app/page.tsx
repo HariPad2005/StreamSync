@@ -11,21 +11,20 @@ export default function StreamPlayer() {
   const [currentChunk, setCurrentChunk] = useState(0);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [videoUrl, setVideoUrl] = useState('');
+  const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadChunk = async (chunk: number, bucket: string): Promise<string | null> => {
     try {
       const res = await fetch(`/api/get-signed-url?chunk=${chunk}&bucket=${bucket}`);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch signed URL: ${res.statusText}`);
-      }
       const data = await res.json();
-      if (data.url) {
+      if (res.ok && data.url) {
         console.log(`✅ Loaded chunk ${chunk} from bucket ${bucket}`);
         return data.url;
       } else {
-        throw new Error(data.error || "Unknown error");
+        console.error("❌ Failed to load video chunk:", data.error || res.statusText);
+        return null;
       }
     } catch (err) {
       console.error("❌ Error fetching signed URL:", err);
@@ -33,44 +32,7 @@ export default function StreamPlayer() {
     }
   };
 
-  const storeChunkOnServer = async (chunk: number, bucket: string): Promise<string | null> => {
-    try {
-      const res = await fetch(`/api/store-chunk?chunk=${chunk}&bucket=${bucket}`);
-      if (!res.ok) {
-        throw new Error(`Failed to store chunk: ${res.statusText}`);
-      }
-      const data = await res.json();
-      if (data.url) {
-        console.log(`✅ Stored chunk ${chunk} from bucket ${bucket} on server`);
-        return data.url;
-      } else {
-        throw new Error(data.error || "Unknown error");
-      }
-    } catch (err) {
-      console.error("❌ Error storing chunk on server:", err);
-      return null;
-    }
-  };
-
-  const getStoredChunk = async (chunk: number, bucket: string): Promise<string | null> => {
-    try {
-      const res = await fetch(`/api/get-stored-chunk?chunk=${chunk}&bucket=${bucket}`);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch stored chunk: ${res.statusText}`);
-      }
-      const data = await res.json();
-      if (data.url) {
-        console.log(`✅ Retrieved stored chunk ${chunk} from bucket ${bucket}`);
-        return data.url;
-      } else {
-        throw new Error(data.error || "Unknown error");
-      }
-    } catch (err) {
-      console.error("❌ Error fetching stored chunk:", err);
-      return null;
-    }
-  };
-
+  // Load current and preload next chunk
   useEffect(() => {
     const { bucket, totalChunks } = PLAYLIST[currentVideoIndex];
 
@@ -80,16 +42,18 @@ export default function StreamPlayer() {
       setLoading(false);
     });
 
-    // Preload and store the next chunk on the server
+    // Preload next chunk or next video
     (async () => {
       const isLastChunk = currentChunk + 1 >= totalChunks;
       if (!isLastChunk) {
-        const nextChunkUrl = await storeChunkOnServer(currentChunk + 1, bucket);
-        if (nextChunkUrl) console.log('Next chunk stored on server:', nextChunkUrl);
+        const nextChunkUrl = await loadChunk(currentChunk + 1, bucket);
+        if (nextChunkUrl) setNextUrl(nextChunkUrl);
       } else if (currentVideoIndex + 1 < PLAYLIST.length) {
         const nextVideo = PLAYLIST[currentVideoIndex + 1];
-        const firstChunkNextVideo = await storeChunkOnServer(0, nextVideo.bucket);
-        if (firstChunkNextVideo) console.log('Next chunk stored on server:', firstChunkNextVideo);
+        const firstChunkNextVideo = await loadChunk(0, nextVideo.bucket);
+        if (firstChunkNextVideo) setNextUrl(firstChunkNextVideo);
+      } else {
+        setNextUrl(null); // No more videos
       }
     })();
   }, [currentChunk, currentVideoIndex]);
@@ -97,38 +61,14 @@ export default function StreamPlayer() {
   const handleEnded = () => {
     const current = PLAYLIST[currentVideoIndex];
     const nextChunk = currentChunk + 1;
-  
+
+    if (nextUrl) {
+      setVideoUrl(nextUrl);
+      setNextUrl(null);
+    }
+
     if (nextChunk < current.totalChunks) {
-      getStoredChunk(nextChunk, current.bucket)
-        .then((url) => {
-          if (url) {
-            setVideoUrl(url);
-            setCurrentChunk(nextChunk);
-  
-            if (nextChunk + 1 < current.totalChunks) {
-              storeChunkOnServer(nextChunk + 1, current.bucket).catch((err) => {
-                console.error("❌ Error preloading next chunk:", err);
-              });
-            }
-          } else {
-            console.error("❌ Chunk not found on server, fetching directly...");
-            loadChunk(nextChunk, current.bucket).then((url) => {
-              if (url) {
-                setVideoUrl(url);
-                setCurrentChunk(nextChunk);
-              }
-            });
-          }
-        })
-        .catch((err) => {
-          console.error("❌ Error fetching stored chunk:", err);
-          loadChunk(nextChunk, current.bucket).then((url) => {
-            if (url) {
-              setVideoUrl(url);
-              setCurrentChunk(nextChunk);
-            }
-          });
-        });
+      setCurrentChunk(nextChunk);
     } else if (currentVideoIndex + 1 < PLAYLIST.length) {
       setCurrentVideoIndex((prev) => prev + 1);
       setCurrentChunk(0);
@@ -148,7 +88,6 @@ export default function StreamPlayer() {
           key={videoUrl}
           ref={videoRef}
           autoPlay
-          muted // Added muted attribute
           preload="auto"
           controls
           onEnded={handleEnded}
